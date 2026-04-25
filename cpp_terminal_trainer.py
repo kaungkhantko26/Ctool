@@ -4,6 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from rich import box
 from rich.console import Console
@@ -22,6 +23,8 @@ class Challenge:
     prompt: str
     answer: str | None = None
     contains: tuple[str, ...] = ()
+    validator: Callable[[str], bool] | None = None
+    code_mode: bool = False
     hint: str = ""
     success: str = "Correct."
     failure: str = "Not quite."
@@ -29,6 +32,8 @@ class Challenge:
 
     def check(self, user_answer: str) -> bool:
         normalized = normalize(user_answer)
+        if self.validator:
+            return self.validator(user_answer)
         if self.answer is not None:
             return normalized == normalize(self.answer)
         return all(token.lower() in normalized for token in self.contains)
@@ -42,6 +47,45 @@ class Lesson:
     concept: str
     example: str
     challenges: tuple[Challenge, ...]
+
+
+def validate_variable_declaration(code: str) -> bool:
+    normalized = normalize_code(code)
+    return (
+        "int " in normalized
+        and "=" in normalized
+        and ";" in normalized
+        and any(name in normalized for name in ("score", "age", "x"))
+    )
+
+
+def validate_output_statement(code: str) -> bool:
+    normalized = normalize_code(code)
+    return (
+        "cout" in normalized
+        and "<<" in normalized
+        and ";" in normalized
+        and ('"hi"' in normalized or "'hi'" in normalized)
+    )
+
+
+def validate_if_statement(code: str) -> bool:
+    normalized = normalize_code(code)
+    return (
+        "if" in normalized
+        and "score" in normalized
+        and ">" in normalized
+        and "50" in normalized
+        and "(" in normalized
+        and ")" in normalized
+        and "{" in normalized
+        and "}" in normalized
+    )
+
+
+def validate_loop(code: str) -> bool:
+    normalized = normalize_code(code)
+    return "for" in normalized and normalized.count(";") >= 2 and "i++" in normalized
 
 
 LESSONS: tuple[Lesson, ...] = (
@@ -62,11 +106,12 @@ LESSONS: tuple[Lesson, ...] = (
                 success="Nice. `int` stores whole numbers like 18 or -3.",
             ),
             Challenge(
-                prompt="Write a C++ variable named score with the value 100.",
-                contains=("int", "score", "=", "100"),
-                hint="Use: type name = value;",
-                success="Good declaration. You used a type, name, assignment, and value.",
-                xp=15,
+                prompt="Write a FULL valid variable declaration with a semicolon.",
+                validator=validate_variable_declaration,
+                code_mode=True,
+                hint="Example: int score = 100;",
+                success="Real code detected. Good declaration.",
+                xp=25,
             ),
         ),
     ),
@@ -87,11 +132,12 @@ LESSONS: tuple[Lesson, ...] = (
                 success="Right. `cout` is the usual console output object.",
             ),
             Challenge(
-                prompt='Write code that prints "Hi".',
-                contains=("cout", "<<", '"hi"'),
-                hint='Use cout, the << operator, and "Hi" in quotes.',
-                success="Clean. That is the core C++ print pattern.",
-                xp=15,
+                prompt='Write a full C++ output statement that prints "Hi".',
+                validator=validate_output_statement,
+                code_mode=True,
+                hint='Example: cout << "Hi";',
+                success="Clean. That is a real output statement.",
+                xp=25,
             ),
         ),
     ),
@@ -112,11 +158,12 @@ LESSONS: tuple[Lesson, ...] = (
                 success="Correct. `if` starts conditional logic.",
             ),
             Challenge(
-                prompt="Write an if statement that checks if score is greater than 50.",
-                contains=("if", "score", ">", "50"),
-                hint="Use: if (score > 50) { ... }",
-                success="Good. You expressed the condition correctly.",
-                xp=20,
+                prompt="Write a full if block that checks if score is greater than 50.",
+                validator=validate_if_statement,
+                code_mode=True,
+                hint='Example: if (score > 50) { cout << "Pass"; }',
+                success="Good. You wrote a complete if block structure.",
+                xp=30,
             ),
         ),
     ),
@@ -137,11 +184,12 @@ LESSONS: tuple[Lesson, ...] = (
                 success="Correct. `for` is perfect for counted repetition.",
             ),
             Challenge(
-                prompt="Write the start of a loop that creates int i = 0.",
-                contains=("for", "int", "i", "=", "0"),
-                hint="Start with: for (int i = 0; ...",
-                success="Good start. That initializes the loop counter.",
-                xp=20,
+                prompt="Write a full for loop that counts with i++.",
+                validator=validate_loop,
+                code_mode=True,
+                hint="Example: for (int i = 0; i < 5; i++) { cout << i; }",
+                success="Loop structure detected. That is real counted repetition.",
+                xp=30,
             ),
         ),
     ),
@@ -150,6 +198,14 @@ LESSONS: tuple[Lesson, ...] = (
 
 def normalize(text: str) -> str:
     return " ".join(text.strip().lower().replace(";", "").split())
+
+
+def normalize_code(code: str) -> str:
+    return " ".join(code.strip().lower().split())
+
+
+def beep() -> None:
+    console.print("\a", end="")
 
 
 def type_line(text: str, delay: float = 0.01) -> None:
@@ -183,8 +239,8 @@ def show_header(progress: dict) -> None:
     console.clear()
     console.print(
         Panel.fit(
-            "[bold green]C++ Terminal Trainer: Level 2[/bold green]\n"
-            "[dim]Interactive lessons, XP, streaks, hints, and code checks[/dim]",
+            "[bold green]C++ Terminal Trainer: Level 3[/bold green]\n"
+            "[dim]Smart checks, code mode, XP streaks, and lesson unlocks[/dim]",
             border_style="green",
         )
     )
@@ -204,7 +260,8 @@ def lesson_menu(progress: dict) -> str:
 
     completed = set(progress["completed"])
     for index, lesson in enumerate(LESSONS, start=1):
-        status = "done" if lesson.key in completed else "open"
+        unlocked = index == 1 or LESSONS[index - 2].key in completed
+        status = "locked" if not unlocked else ("done" if lesson.key in completed else "open")
         table.add_row(str(index), lesson.title, lesson.level, status)
 
     console.print(table)
@@ -249,13 +306,18 @@ def ask_challenge(challenge: Challenge, progress: dict) -> bool:
     attempts = 0
 
     while attempts < 2:
-        answer = Prompt.ask("answer")
+        answer = read_answer(challenge)
         attempts += 1
 
         if challenge.check(answer):
             progress["xp"] += challenge.xp
             progress["streak"] += 1
+            beep()
             console.print(f"[green]{challenge.success} +{challenge.xp} XP[/green]")
+            if progress["streak"] >= 3:
+                bonus = 5
+                progress["xp"] += bonus
+                console.print(f"[cyan]Streak bonus +{bonus} XP[/cyan]")
             return True
 
         progress["streak"] = 0
@@ -266,6 +328,20 @@ def ask_challenge(challenge: Challenge, progress: dict) -> bool:
             console.print(f"[red]{challenge.failure} Expected: {reveal}[/red]")
 
     return False
+
+
+def read_answer(challenge: Challenge) -> str:
+    if not challenge.code_mode:
+        return Prompt.ask("answer")
+
+    console.print("[dim]Enter code. Type `END` on a new line to finish.[/dim]")
+    lines: list[str] = []
+    while True:
+        line = Prompt.ask(">")
+        if line.strip().upper() == "END":
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def show_stats(progress: dict) -> None:
@@ -326,7 +402,12 @@ def main() -> None:
             progress = reset_progress()
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(LESSONS):
-            lesson = LESSONS[int(choice) - 1]
+            lesson_index = int(choice) - 1
+            if lesson_index > 0 and LESSONS[lesson_index - 1].key not in progress["completed"]:
+                console.print("[red]Complete previous lesson first.[/red]")
+                time.sleep(1)
+                continue
+            lesson = LESSONS[lesson_index]
             run_lesson(lesson, progress)
             continue
 

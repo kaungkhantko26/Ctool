@@ -1,6 +1,6 @@
-# C++ Terminal Trainer
+# Ctool: C++ Terminal Trainer
 
-A level 2 Python CLI learning game for beginner C++ concepts.
+A level 3 Python CLI learning game for beginner C++ concepts.
 
 ## Run
 
@@ -14,9 +14,10 @@ python3 -m venv .venv
 
 - Terminal-style interface with Rich
 - Beginner lessons for variables, output, conditions, and loops
-- XP, streaks, completion tracking, and reset command
+- XP, streaks, streak bonuses, completion tracking, and reset command
 - Hints after the first wrong answer
-- Simple code-pattern checks for beginner C++ snippets
+- Smart validators for beginner C++ code structure
+- Multi-line code mode for coding challenges
+- Sequential lesson unlocks
 
 Progress is saved in `progress.json` after you start using the trainer.
-# Ctool
