@@ -26,6 +26,8 @@ xcode-select --install
 
 - Terminal-style interface with Rich
 - Beautiful in-app upgrade session with `ctool upgrade`
+- Graceful Ctrl+C exit screen with session summary
+- Full C++ learning roadmap inspired by W3Schools
 - Beginner lessons for variables, output, conditions, and loops
 - User profile saved in `progress.json`
 - XP, streaks, streak bonuses, achievements, and reset command
@@ -38,6 +40,21 @@ xcode-select --install
 - Sequential lesson unlocks
 
 Progress is saved in `progress.json` after you start using the trainer.
+
+## Learning Roadmap
+
+Inside the app, type:
+
+```text
+roadmap
+```
+
+The roadmap covers the W3Schools C++ tutorial structure, including basics,
+functions, OOP/classes, errors, STL data structures, namespaces, projects,
+reference topics, examples, exercises, quiz, challenges, practice problems,
+syllabus, and study plan.
+
+Reference: https://www.w3schools.com/cpp/default.asp
 
 ## Update From GitHub
 

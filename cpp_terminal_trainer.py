@@ -57,6 +57,129 @@ class Lesson:
     challenges: tuple[Challenge, ...]
 
 
+@dataclass(frozen=True)
+class CurriculumModule:
+    name: str
+    topics: tuple[str, ...]
+
+
+W3SCHOOLS_CPP_URL = "https://www.w3schools.com/cpp/default.asp"
+
+CURRICULUM: tuple[CurriculumModule, ...] = (
+    CurriculumModule(
+        "C++ Tutorial",
+        (
+            "Intro",
+            "Get Started",
+            "Syntax",
+            "Statements",
+            "Output",
+            "Comments",
+            "Variables",
+            "User Input",
+            "Data Types",
+            "Operators",
+            "Strings",
+            "Math",
+            "Booleans",
+            "If...Else",
+            "Switch",
+            "While Loop",
+            "For Loop",
+            "Break/Continue",
+            "Arrays",
+            "Structures",
+            "Enums",
+            "References",
+            "Pointers",
+            "Memory Management",
+        ),
+    ),
+    CurriculumModule(
+        "C++ Functions",
+        (
+            "Functions",
+            "Function Parameters",
+            "Default Parameters",
+            "Multiple Parameters",
+            "Return Values",
+            "Pass By Reference",
+            "Pass Arrays",
+            "Pass Structures",
+            "Function Overloading",
+            "Scope",
+            "Recursion",
+            "Lambda",
+        ),
+    ),
+    CurriculumModule(
+        "C++ Classes",
+        (
+            "OOP",
+            "Classes/Objects",
+            "Class Methods",
+            "Constructors",
+            "Constructor Overloading",
+            "Access Specifiers",
+            "Encapsulation",
+            "Friend Functions",
+            "Inheritance",
+            "Multilevel Inheritance",
+            "Multiple Inheritance",
+            "Polymorphism",
+            "Virtual Functions",
+            "Templates",
+            "Files",
+            "Date",
+        ),
+    ),
+    CurriculumModule(
+        "C++ Errors",
+        ("Errors", "Debugging", "Exceptions", "Input Validation"),
+    ),
+    CurriculumModule(
+        "C++ Data Structures",
+        (
+            "Data Structures & STL",
+            "Vectors",
+            "List",
+            "Stacks",
+            "Queues",
+            "Deque",
+            "Sets",
+            "Maps",
+            "Iterators",
+            "Algorithms",
+        ),
+    ),
+    CurriculumModule(
+        "C++ Namespaces and Projects",
+        ("Namespaces", "Projects", "Add Two Numbers", "Random Numbers"),
+    ),
+    CurriculumModule(
+        "C++ Reference and Practice",
+        (
+            "Keywords",
+            "<iostream>",
+            "<fstream>",
+            "<cmath>",
+            "<string>",
+            "<cstring>",
+            "<ctime>",
+            "<vector>",
+            "<algorithm>",
+            "Examples",
+            "Exercises",
+            "Quiz",
+            "Code Challenges",
+            "Practice Problems",
+            "Syllabus",
+            "Study Plan",
+        ),
+    ),
+)
+
+
 def validate_variable_declaration(code: str) -> bool:
     normalized = normalize_code(code)
     return (
@@ -367,7 +490,7 @@ def lesson_menu(progress: dict) -> str:
 
     console.print(table)
     console.print(
-        "[dim]Type a lesson number, `stats`, `reset`, `ctool upgrade`, or `exit`.[/dim]"
+        "[dim]Type a lesson number, `roadmap`, `stats`, `reset`, `ctool upgrade`, or `exit`.[/dim]"
     )
     return Prompt.ask("trainer").strip().lower()
 
@@ -520,6 +643,78 @@ def show_stats(progress: dict) -> None:
     Prompt.ask("\nPress Enter to continue", default="")
 
 
+def show_roadmap() -> None:
+    console.clear()
+    console.print(
+        Panel.fit(
+            "[bold cyan]Complete C++ Learning Roadmap[/bold cyan]\n"
+            f"[dim]Topic structure inspired by W3Schools: {W3SCHOOLS_CPP_URL}[/dim]",
+            border_style="cyan",
+        )
+    )
+
+    topic_number = 1
+    for module in CURRICULUM:
+        table = Table(title=module.name, box=box.SIMPLE_HEAVY)
+        table.add_column("#", justify="right", style="cyan", width=4)
+        table.add_column("Topic", style="bold")
+        table.add_column("How to practice in Ctool")
+
+        for topic in module.topics:
+            table.add_row(str(topic_number), topic, practice_hint(topic))
+            topic_number += 1
+
+        console.print(table)
+
+    console.print(
+        Panel(
+            "Use the current interactive lessons for fundamentals, then follow this roadmap "
+            "topic-by-topic. For each topic: read the idea, write a tiny C++ snippet in Code "
+            "Mode, compile it, and repeat until the compiler output makes sense.",
+            title="Study Loop",
+            border_style="green",
+        )
+    )
+    Prompt.ask("\nPress Enter to continue", default="")
+
+
+def practice_hint(topic: str) -> str:
+    normalized = topic.lower()
+    if "output" in normalized or "iostream" in normalized:
+        return 'Print a value with `cout << "Hi";`'
+    if "input" in normalized:
+        return "Read a value with `cin` and print it back"
+    if "variable" in normalized or "data type" in normalized:
+        return "Declare, assign, and print one value"
+    if "operator" in normalized or "math" in normalized:
+        return "Calculate a result and print it"
+    if "if" in normalized or "switch" in normalized or "boolean" in normalized:
+        return "Branch on a condition"
+    if "loop" in normalized or "break" in normalized or "continue" in normalized:
+        return "Repeat output with a counter"
+    if "array" in normalized or "vector" in normalized or "list" in normalized:
+        return "Store multiple values and loop over them"
+    if "structure" in normalized or "enum" in normalized:
+        return "Model a small real-world item"
+    if "reference" in normalized or "pointer" in normalized or "memory" in normalized:
+        return "Print addresses and changed values"
+    if "function" in normalized or "parameter" in normalized or "return" in normalized:
+        return "Write a helper function and call it"
+    if "class" in normalized or "object" in normalized or "constructor" in normalized:
+        return "Create an object with fields and methods"
+    if "inheritance" in normalized or "polymorphism" in normalized or "virtual" in normalized:
+        return "Build a base class and derived class"
+    if "file" in normalized or "fstream" in normalized:
+        return "Write a file, then read it"
+    if "error" in normalized or "debug" in normalized or "exception" in normalized:
+        return "Break code on purpose, then fix it"
+    if "stl" in normalized or "map" in normalized or "set" in normalized:
+        return "Use an STL container for a small dataset"
+    if "algorithm" in normalized or "iterator" in normalized:
+        return "Sort or search a container"
+    return "Write a tiny example and compile it"
+
+
 def reset_progress(current_progress: dict) -> dict:
     if not Confirm.ask("Reset all XP, streaks, and lesson progress?"):
         return current_progress
@@ -645,37 +840,69 @@ def boot_sequence() -> None:
 
 
 def main() -> None:
-    boot_sequence()
-    progress = load_progress()
+    try:
+        boot_sequence()
+        progress = load_progress()
 
-    while True:
-        show_header(progress)
-        choice = lesson_menu(progress)
+        while True:
+            show_header(progress)
+            choice = lesson_menu(progress)
 
-        if choice == "exit":
-            console.print("[bold red]Session closed.[/bold red]")
-            break
-        if choice == "stats":
-            show_stats(progress)
-            continue
-        if choice == "reset":
-            progress = reset_progress(progress)
-            continue
-        if choice == UPGRADE_COMMAND:
-            run_upgrade()
-            continue
-        if choice.isdigit() and 1 <= int(choice) <= len(LESSONS):
-            lesson_index = int(choice) - 1
-            if lesson_index > 0 and LESSONS[lesson_index - 1].key not in progress["completed"]:
-                console.print("[red]Complete previous lesson first.[/red]")
-                time.sleep(1)
+            if choice == "exit":
+                show_exit_screen(progress, interrupted=False)
+                break
+            if choice == "roadmap":
+                show_roadmap()
                 continue
-            lesson = LESSONS[lesson_index]
-            run_lesson(lesson, progress)
-            continue
+            if choice == "stats":
+                show_stats(progress)
+                continue
+            if choice == "reset":
+                progress = reset_progress(progress)
+                continue
+            if choice == UPGRADE_COMMAND:
+                run_upgrade()
+                continue
+            if choice.isdigit() and 1 <= int(choice) <= len(LESSONS):
+                lesson_index = int(choice) - 1
+                if lesson_index > 0 and LESSONS[lesson_index - 1].key not in progress["completed"]:
+                    console.print("[red]Complete previous lesson first.[/red]")
+                    time.sleep(1)
+                    continue
+                lesson = LESSONS[lesson_index]
+                run_lesson(lesson, progress)
+                continue
 
-        console.print("[red]Unknown command.[/red]")
-        time.sleep(0.8)
+            console.print("[red]Unknown command.[/red]")
+            time.sleep(0.8)
+    except KeyboardInterrupt:
+        show_exit_screen(locals().get("progress"), interrupted=True)
+
+
+def show_exit_screen(progress: dict | None, interrupted: bool) -> None:
+    console.clear()
+    title = "Session Interrupted" if interrupted else "Session Closed"
+    message = "Ctrl+C received. Your saved progress is still safe." if interrupted else "Progress saved."
+    console.print(
+        Panel.fit(
+            f"[bold green]Ctool[/bold green]\n[dim]{message}[/dim]",
+            title=title,
+            border_style="green" if not interrupted else "yellow",
+        )
+    )
+
+    if progress:
+        table = Table(box=box.SIMPLE_HEAVY)
+        table.add_column("Metric", style="bold")
+        table.add_column("Value")
+        table.add_row("User", progress_name(progress))
+        table.add_row("XP", str(progress.get("xp", 0)))
+        table.add_row("Streak", str(progress.get("streak", 0)))
+        table.add_row("Completed", f"{len(progress.get('completed', []))}/{len(LESSONS)}")
+        table.add_row("Attempts", str(progress.get("attempts", 0)))
+        console.print(table)
+
+    console.print("[cyan]Next time:[/cyan] run `.venv/bin/python cpp_terminal_trainer.py`")
 
 
 def progress_name(progress: dict) -> str:
