@@ -25,6 +25,7 @@ xcode-select --install
 ## Features
 
 - Terminal-style interface with Rich
+- Beautiful in-app upgrade session with `ctool upgrade`
 - Beginner lessons for variables, output, conditions, and loops
 - User profile saved in `progress.json`
 - XP, streaks, streak bonuses, achievements, and reset command
@@ -37,3 +38,15 @@ xcode-select --install
 - Sequential lesson unlocks
 
 Progress is saved in `progress.json` after you start using the trainer.
+
+## Update From GitHub
+
+Inside the app, type:
+
+```text
+ctool upgrade
+```
+
+Ctool will check the current Git repository, fetch `origin`, and fast-forward pull
+from `origin/main`. If local files have uncommitted changes, the upgrade pauses so
+your work is not overwritten.

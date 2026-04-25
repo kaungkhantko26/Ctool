@@ -13,11 +13,13 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 
 SAVE_FILE = Path("progress.json")
 GF_MODE = False
+UPGRADE_COMMAND = "ctool upgrade"
 
 console = Console()
 
@@ -364,7 +366,9 @@ def lesson_menu(progress: dict) -> str:
         table.add_row(str(index), lesson.title, lesson.level, status)
 
     console.print(table)
-    console.print("[dim]Type a lesson number, `stats`, `reset`, or `exit`.[/dim]")
+    console.print(
+        "[dim]Type a lesson number, `stats`, `reset`, `ctool upgrade`, or `exit`.[/dim]"
+    )
     return Prompt.ask("trainer").strip().lower()
 
 
@@ -527,6 +531,105 @@ def reset_progress(current_progress: dict) -> dict:
     return progress
 
 
+def run_shell_command(command: list[str], timeout: int = 30) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def git_output(command: list[str], timeout: int = 30) -> tuple[bool, str]:
+    try:
+        result = run_shell_command(command, timeout=timeout)
+    except FileNotFoundError:
+        return False, "Git was not found on this system."
+    except subprocess.TimeoutExpired:
+        return False, f"Command timed out: {' '.join(command)}"
+
+    output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
+    return result.returncode == 0, output or "No output."
+
+
+def is_git_checkout() -> bool:
+    ok, _ = git_output(["git", "rev-parse", "--is-inside-work-tree"], timeout=5)
+    return ok
+
+
+def has_local_changes() -> bool:
+    ok, output = git_output(["git", "status", "--porcelain"], timeout=5)
+    return ok and bool(output.strip() and output != "No output.")
+
+
+def run_upgrade() -> None:
+    console.clear()
+    console.print(
+        Panel.fit(
+            "[bold green]Ctool Upgrade Session[/bold green]\n"
+            "[dim]Syncing the trainer from the GitHub repository[/dim]",
+            border_style="green",
+        )
+    )
+
+    if not is_git_checkout():
+        console.print("[red]Upgrade needs to run inside the Ctool Git repository.[/red]")
+        Prompt.ask("\nPress Enter to continue", default="")
+        return
+
+    if has_local_changes():
+        console.print(
+            Panel(
+                "Local files have uncommitted changes. Commit or stash them before upgrading "
+                "so the pull does not overwrite your work.",
+                title="Upgrade paused",
+                border_style="yellow",
+            )
+        )
+        Prompt.ask("\nPress Enter to continue", default="")
+        return
+
+    steps: list[tuple[str, list[str]]] = [
+        ("Checking current branch", ["git", "branch", "--show-current"]),
+        ("Checking remote", ["git", "remote", "get-url", "origin"]),
+        ("Fetching latest code", ["git", "fetch", "origin"]),
+        ("Pulling updates", ["git", "pull", "--ff-only", "origin", "main"]),
+    ]
+    results: list[tuple[str, bool, str]] = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        for label, command in steps:
+            task = progress.add_task(label, total=None)
+            ok, output = git_output(command, timeout=60)
+            progress.remove_task(task)
+            results.append((label, ok, output))
+            if not ok:
+                break
+
+    table = Table(title="Upgrade Report", box=box.SIMPLE_HEAVY)
+    table.add_column("Step", style="bold")
+    table.add_column("Status")
+    table.add_column("Details", overflow="fold")
+
+    for label, ok, output in results:
+        status = "[green]done[/green]" if ok else "[red]failed[/red]"
+        table.add_row(label, status, output)
+
+    console.print(table)
+    if all(ok for _, ok, _ in results):
+        console.print("[bold green]Upgrade complete. Restart Ctool to load new code.[/bold green]")
+    else:
+        console.print("[bold red]Upgrade stopped. Check the failed step above.[/bold red]")
+
+    Prompt.ask("\nPress Enter to continue", default="")
+
+
 def boot_sequence() -> None:
     console.clear()
     lines = [
@@ -557,6 +660,9 @@ def main() -> None:
             continue
         if choice == "reset":
             progress = reset_progress(progress)
+            continue
+        if choice == UPGRADE_COMMAND:
+            run_upgrade()
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(LESSONS):
             lesson_index = int(choice) - 1
