@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +17,7 @@ from rich.table import Table
 
 
 SAVE_FILE = Path("progress.json")
+GF_MODE = False
 
 console = Console()
 
@@ -21,10 +25,12 @@ console = Console()
 @dataclass(frozen=True)
 class Challenge:
     prompt: str
+    topic: str
     answer: str | None = None
     contains: tuple[str, ...] = ()
     validator: Callable[[str], bool] | None = None
     code_mode: bool = False
+    run_code: bool = False
     hint: str = ""
     success: str = "Correct."
     failure: str = "Not quite."
@@ -88,6 +94,68 @@ def validate_loop(code: str) -> bool:
     return "for" in normalized and normalized.count(";") >= 2 and "i++" in normalized
 
 
+def wrap_cpp_snippet(code: str) -> str:
+    stripped = code.strip()
+    if "int main" in stripped:
+        return stripped
+    return (
+        "#include <iostream>\n"
+        "using namespace std;\n\n"
+        "int main() {\n"
+        f"{stripped}\n"
+        "    return 0;\n"
+        "}\n"
+    )
+
+
+def run_cpp_code(code: str) -> tuple[bool, str]:
+    if shutil.which("g++") is None:
+        return False, "g++ was not found. Install Xcode Command Line Tools or GCC."
+
+    with tempfile.TemporaryDirectory(prefix="ctool_cpp_") as tmp_dir:
+        cpp_file = Path(tmp_dir) / "main.cpp"
+        exe_file = Path(tmp_dir) / "main"
+        cpp_file.write_text(wrap_cpp_snippet(code), encoding="utf-8")
+
+        compile_result = subprocess.run(
+            ["g++", str(cpp_file), "-o", str(exe_file)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if compile_result.returncode != 0:
+            return False, compile_result.stderr.strip()
+
+        run_result = subprocess.run(
+            [str(exe_file)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if run_result.returncode != 0:
+            return False, (run_result.stderr or run_result.stdout).strip()
+        return True, run_result.stdout.strip() or "(no output)"
+
+
+def analyze_error(error: str) -> str:
+    normalized = error.lower()
+    if "g++ was not found" in normalized:
+        return "Install a C++ compiler first. On macOS, run: xcode-select --install"
+    if "cout" in normalized and "not declared" in normalized:
+        return "Add `using namespace std;` or write `std::cout`."
+    if "expected ';'" in normalized or "expected ';' after" in normalized:
+        return "Missing semicolon near the line the compiler reported."
+    if "undefined reference to" in normalized and "main" in normalized:
+        return "C++ programs need `int main() { ... }`."
+    if "was not declared" in normalized:
+        return "A variable or function is being used before it is declared."
+    if "expected" in normalized and ("}" in normalized or "{" in normalized):
+        return "Check your braces. Every `{` needs a matching `}`."
+    return "Syntax issue. Check spelling, brackets, semicolons, and structure."
+
+
 LESSONS: tuple[Lesson, ...] = (
     Lesson(
         key="variables",
@@ -101,12 +169,14 @@ LESSONS: tuple[Lesson, ...] = (
         challenges=(
             Challenge(
                 prompt="What C++ type stores whole numbers?",
+                topic="variables",
                 answer="int",
                 hint="It is short for integer.",
                 success="Nice. `int` stores whole numbers like 18 or -3.",
             ),
             Challenge(
                 prompt="Write a FULL valid variable declaration with a semicolon.",
+                topic="variables",
                 validator=validate_variable_declaration,
                 code_mode=True,
                 hint="Example: int score = 100;",
@@ -127,14 +197,17 @@ LESSONS: tuple[Lesson, ...] = (
         challenges=(
             Challenge(
                 prompt="What object is commonly used to print output in C++?",
+                topic="output",
                 answer="cout",
                 hint="It starts with c and means console output.",
                 success="Right. `cout` is the usual console output object.",
             ),
             Challenge(
                 prompt='Write a full C++ output statement that prints "Hi".',
+                topic="output",
                 validator=validate_output_statement,
                 code_mode=True,
+                run_code=True,
                 hint='Example: cout << "Hi";',
                 success="Clean. That is a real output statement.",
                 xp=25,
@@ -153,12 +226,14 @@ LESSONS: tuple[Lesson, ...] = (
         challenges=(
             Challenge(
                 prompt="What keyword starts a condition in C++?",
+                topic="conditions",
                 answer="if",
                 hint="It is the same word as English: if this, then that.",
                 success="Correct. `if` starts conditional logic.",
             ),
             Challenge(
                 prompt="Write a full if block that checks if score is greater than 50.",
+                topic="conditions",
                 validator=validate_if_statement,
                 code_mode=True,
                 hint='Example: if (score > 50) { cout << "Pass"; }',
@@ -179,14 +254,17 @@ LESSONS: tuple[Lesson, ...] = (
         challenges=(
             Challenge(
                 prompt="Which loop is commonly used when you know the repeat count?",
+                topic="loops",
                 answer="for",
                 hint="It has setup, condition, and update parts.",
                 success="Correct. `for` is perfect for counted repetition.",
             ),
             Challenge(
                 prompt="Write a full for loop that counts with i++.",
+                topic="loops",
                 validator=validate_loop,
                 code_mode=True,
+                run_code=True,
                 hint="Example: for (int i = 0; i < 5; i++) { cout << i; }",
                 success="Loop structure detected. That is real counted repetition.",
                 xp=30,
@@ -208,6 +286,11 @@ def beep() -> None:
     console.print("\a", end="")
 
 
+def gf_feedback() -> None:
+    if GF_MODE:
+        console.print("[magenta]You are doing great. Keep going.[/magenta]")
+
+
 def type_line(text: str, delay: float = 0.01) -> None:
     for char in text:
         console.print(char, end="")
@@ -217,17 +300,32 @@ def type_line(text: str, delay: float = 0.01) -> None:
 
 def load_progress() -> dict:
     if not SAVE_FILE.exists():
-        return {"xp": 0, "streak": 0, "completed": []}
+        name = Prompt.ask("Enter your name", default="Coder")
+        return new_progress(name)
 
     try:
         data = json.loads(SAVE_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {"xp": 0, "streak": 0, "completed": []}
+        return new_progress("Coder")
 
     return {
+        "name": str(data.get("name", "Coder")),
         "xp": int(data.get("xp", 0)),
         "streak": int(data.get("streak", 0)),
         "completed": list(data.get("completed", [])),
+        "weak_topics": dict(data.get("weak_topics", {})),
+        "attempts": int(data.get("attempts", 0)),
+    }
+
+
+def new_progress(name: str) -> dict:
+    return {
+        "name": name,
+        "xp": 0,
+        "streak": 0,
+        "completed": [],
+        "weak_topics": {},
+        "attempts": 0,
     }
 
 
@@ -239,12 +337,13 @@ def show_header(progress: dict) -> None:
     console.clear()
     console.print(
         Panel.fit(
-            "[bold green]C++ Terminal Trainer: Level 3[/bold green]\n"
-            "[dim]Smart checks, code mode, XP streaks, and lesson unlocks[/dim]",
+            "[bold green]Ctool: Terminal Coding Platform[/bold green]\n"
+            "[dim]C++ execution, AI-style hints, XP, weak-topic tracking[/dim]",
             border_style="green",
         )
     )
     console.print(
+        f"[bold]User:[/bold] {progress['name']}    "
         f"[bold]XP:[/bold] {progress['xp']}    "
         f"[bold]Streak:[/bold] {progress['streak']}    "
         f"[bold]Completed:[/bold] {len(progress['completed'])}/{len(LESSONS)}"
@@ -308,33 +407,59 @@ def ask_challenge(challenge: Challenge, progress: dict) -> bool:
     while attempts < 2:
         answer = read_answer(challenge)
         attempts += 1
+        progress["attempts"] += 1
 
-        if challenge.check(answer):
-            progress["xp"] += challenge.xp
-            progress["streak"] += 1
-            beep()
-            console.print(f"[green]{challenge.success} +{challenge.xp} XP[/green]")
-            if progress["streak"] >= 3:
-                bonus = 5
-                progress["xp"] += bonus
-                console.print(f"[cyan]Streak bonus +{bonus} XP[/cyan]")
+        compiled = True
+        execution_output = ""
+        if challenge.run_code:
+            compiled, execution_output = run_cpp_code(answer)
+            if compiled:
+                console.print("[green]Output:[/green]")
+                console.print(execution_output)
+
+        if compiled and challenge.check(answer):
+            award_success(challenge, progress)
             return True
 
+        track_weak_topic(challenge, progress)
         progress["streak"] = 0
+        if challenge.run_code and not compiled:
+            console.print("[red]Compiler feedback:[/red]")
+            console.print(execution_output or "No compiler output.")
+            console.print(analyze_error(execution_output), style="yellow")
         if attempts == 1 and challenge.hint:
             console.print(f"[yellow]Hint: {challenge.hint}[/yellow]")
         else:
             reveal = challenge.answer or ", ".join(challenge.contains)
-            console.print(f"[red]{challenge.failure} Expected: {reveal}[/red]")
+            expected = reveal if reveal else "valid code structure"
+            console.print(f"[red]{challenge.failure} Expected: {expected}[/red]")
 
     return False
+
+
+def award_success(challenge: Challenge, progress: dict) -> None:
+    progress["xp"] += challenge.xp
+    progress["streak"] += 1
+    beep()
+    console.print(f"[green]{challenge.success} +{challenge.xp} XP[/green]")
+    if progress["streak"] >= 3:
+        bonus = 5
+        progress["xp"] += bonus
+        console.print(f"[cyan]Streak bonus +{bonus} XP[/cyan]")
+    gf_feedback()
+
+
+def track_weak_topic(challenge: Challenge, progress: dict) -> None:
+    weak_topics = progress.setdefault("weak_topics", {})
+    weak_topics[challenge.topic] = int(weak_topics.get(challenge.topic, 0)) + 1
 
 
 def read_answer(challenge: Challenge) -> str:
     if not challenge.code_mode:
         return Prompt.ask("answer")
 
-    console.print("[dim]Enter code. Type `END` on a new line to finish.[/dim]")
+    console.print("[bold cyan]Code Mode[/bold cyan]")
+    console.print("[dim]Write C++ code. Type `END` on a new line to finish.[/dim]")
     lines: list[str] = []
     while True:
         line = Prompt.ask(">")
@@ -344,27 +469,58 @@ def read_answer(challenge: Challenge) -> str:
     return "\n".join(lines)
 
 
+def get_achievements(progress: dict) -> list[str]:
+    achievements: list[str] = []
+    if progress["xp"] >= 100:
+        achievements.append("Beginner Master")
+    if progress["streak"] >= 5:
+        achievements.append("On Fire")
+    if len(progress["completed"]) == len(LESSONS):
+        achievements.append("All Lessons Cleared")
+    if sum(progress.get("weak_topics", {}).values()) > 5:
+        achievements.append("Learning Fighter")
+    return achievements
+
+
 def show_stats(progress: dict) -> None:
     show_header(progress)
     completed = set(progress["completed"])
     locked = [lesson.title for lesson in LESSONS if lesson.key not in completed]
+    weak_topics = progress.get("weak_topics", {})
+    achievements = get_achievements(progress)
 
     console.print(Panel("[bold]Stats[/bold]", border_style="blue"))
+    console.print(f"User: [bold]{progress['name']}[/bold]")
     console.print(f"Total XP: [bold green]{progress['xp']}[/bold green]")
     console.print(f"Current streak: [bold cyan]{progress['streak']}[/bold cyan]")
+    console.print(f"Attempts: [bold]{progress['attempts']}[/bold]")
     console.print(f"Lessons cleared: [bold]{len(completed)}/{len(LESSONS)}[/bold]")
     if locked:
         console.print("Still to clear: " + ", ".join(locked))
     else:
         console.print("[green]All lessons cleared.[/green]")
+
+    console.print("\n[bold]Weak Topics[/bold]")
+    if weak_topics:
+        for topic, count in sorted(weak_topics.items(), key=lambda item: item[1], reverse=True):
+            console.print(f"- {topic}: {count} mistake(s)")
+    else:
+        console.print("[green]No weak topics tracked yet.[/green]")
+
+    console.print("\n[bold]Achievements[/bold]")
+    if achievements:
+        for achievement in achievements:
+            console.print(f"- {achievement}")
+    else:
+        console.print("[dim]No achievements unlocked yet.[/dim]")
     Prompt.ask("\nPress Enter to continue", default="")
 
 
-def reset_progress() -> dict:
+def reset_progress(current_progress: dict) -> dict:
     if not Confirm.ask("Reset all XP, streaks, and lesson progress?"):
-        return load_progress()
+        return current_progress
 
-    progress = {"xp": 0, "streak": 0, "completed": []}
+    progress = new_progress(progress_name(current_progress))
     save_progress(progress)
     console.print("[yellow]Progress reset.[/yellow]")
     time.sleep(0.8)
@@ -374,9 +530,10 @@ def reset_progress() -> dict:
 def boot_sequence() -> None:
     console.clear()
     lines = [
-        "booting trainer kernel...",
-        "loading beginner-safe C++ concepts...",
-        "installing confidence module...",
+        "booting Ctool platform...",
+        "loading C++ lesson engine...",
+        "checking compiler bridge...",
+        "starting tutor system...",
         "ready.",
     ]
     for line in lines:
@@ -399,7 +556,7 @@ def main() -> None:
             show_stats(progress)
             continue
         if choice == "reset":
-            progress = reset_progress()
+            progress = reset_progress(progress)
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(LESSONS):
             lesson_index = int(choice) - 1
@@ -413,6 +570,10 @@ def main() -> None:
 
         console.print("[red]Unknown command.[/red]")
         time.sleep(0.8)
+
+
+def progress_name(progress: dict) -> str:
+    return str(progress.get("name", "Coder"))
 
 
 if __name__ == "__main__":
